@@ -2,6 +2,7 @@
 
 require('dotenv').config();
 const http = require('http');
+const logger = require('./logger');
 
 async function prompt(model, promptText) {
   return new Promise((resolve, reject) => {
@@ -34,18 +35,18 @@ async function prompt(model, promptText) {
             }
           });
         } catch (e) {
-          console.error("Error processing chunk:", e);
+          logger.log(`Error processing chunk: ${e}`, 'ERROR');
         }
       });
 
       res.on('end', () => {
-        console.log("\n--- End of response ---");
+        logger.log("--- End of response ---");
         resolve(fullResponse);
       });
     });
 
     req.on('error', (error) => {
-      console.error("Request error:", error);
+      logger.log(`Request error: ${error}`, 'ERROR');
       reject(error);
     });
 
@@ -63,14 +64,18 @@ async function runChain() {
 
   try {
     for (const promptText of prompts) {
-      console.log("\nPrompt:", promptText);
+      logger.log(`Prompt: ${promptText}`, 'PROMPT');
       const response = await prompt(null, promptText);
-      console.log("\nFull Response:", response);
-      console.log("---");
+      logger.log(`Full Response: ${response}`, 'RESPONSE');
+      logger.log("---");
     }
   } catch (error) {
-    console.error("An error occurred:", error.message);
+    logger.log(`An error occurred: ${error.message}`, 'ERROR');
   }
 }
 
-runChain();
+logger.log("Starting multichain example...");
+runChain().then(() => {
+  logger.log("Multichain example completed.");
+  logger.close();
+});
