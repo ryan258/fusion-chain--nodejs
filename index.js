@@ -1,62 +1,79 @@
 // index.js
 
-require('dotenv').config();
-const https = require('https');
+require('dotenv').config(); // Load environment variables from .env file
+const https = require('https'); // Import the https module for making HTTP requests
+const { MinimalChainable } = require('./chain'); // Import the MinimalChainable class from chain.js
 
-async function runAgentChain(initialPrompt) {
-  const agents = [
-    { role: 'Task Planner', promptTemplate: 'Plan the necessary steps to fulfill the user request: {userRequest}' },
-    { role: 'Information Retriever', promptTemplate: 'Retrieve relevant information for step: {step}' },
-    { role: 'Task Executor', promptTemplate: 'Execute the task based on the information: {information}' },
-  ];
-  let currentOutput = initialPrompt;
-  for (const agent of agents) {
-    const prompt = agent.promptTemplate
-      .replace('{userRequest}', currentOutput)
-      .replace('{step}', currentOutput)
-      .replace('{information}', currentOutput);
+// Function to send a prompt to the OpenAI API and get a response
+async function prompt(model, promptText) {
+  const requestBody = JSON.stringify({
+    model: 'gpt-4o-mini-2024-07-18', // Specify the desired OpenAI model
+    messages: [{ role: 'user', content: promptText }], // Send the prompt as a user message
+  });
 
-    const requestBody = JSON.stringify({
-      model: 'gpt-4o-mini-2024-07-18',
-      messages: [{ role: 'user', content: prompt }],
+  const options = {
+    hostname: 'api.openai.com', // OpenAI API hostname
+    path: '/v1/chat/completions', // API endpoint path
+    method: 'POST', // HTTP method
+    headers: {
+      'Content-Type': 'application/json', // Content type header
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`, // Authorization header with API key
+    },
+  };
+
+  // Use a Promise to handle the asynchronous HTTP request
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk; // Accumulate response data
+      });
+      res.on('end', () => {
+        try {
+          const response = JSON.parse(data); // Parse the response as JSON
+
+          // Check if choices exist and have at least one element
+          if (response.choices && response.choices.length > 0) {
+            resolve(response.choices[0].message.content); // Resolve with the model's response content
+          } else {
+            console.error('OpenAI API response missing choices or empty choices array:', response);
+            reject(new Error('Invalid OpenAI API response')); // Reject with an error message
+          }
+        } catch (parseError) {
+          console.error('Error parsing OpenAI API response:', parseError);
+          reject(parseError); // Reject with the parsing error
+        }
+      });
     });
 
-    const options = {
-      hostname: 'api.openai.com',
-      path: '/v1/chat/completions',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-    };
-
-    currentOutput = await new Promise((resolve, reject) => {
-      const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-        res.on('end', () => {
-          const response = JSON.parse(data);
-          resolve(response.choices[0].message.content);
-        });
-      });
-
-      req.on('error', (error) => {
-        reject(error);
-      });
-
-      req.write(requestBody);
-      req.end();
+    req.on('error', (error) => {
+      reject(error); // Reject the Promise if there's an error with the request
     });
 
-    console.log(`${agent.role}: ${currentOutput}`);
-  }
-
-  return currentOutput;
+    req.write(requestBody); // Write the request body
+    req.end(); // End the request
+  });
 }
 
-runAgentChain('Write a short story about a cat who goes on an adventure.')
-  .then(finalOutput => console.log(`Final Output: ${finalOutput}`))
-  .catch(error => console.error('Error:', error));
+// Function to run the agent chain
+async function runChain() {
+  const initialContext = { topic: 'AI Agents' }; // Initial context for the chain
+  const prompts = [
+    "Generate one blog post title about: {{topic}}. Respond in strictly in JSON in this format: {'title': '<title>'}",
+    "Generate one hook for the blog post title: {{{output[-1]}}}", // Correct the reference to the previous output
+    // Add more prompts as needed
+  ];
+
+  // Run the MinimalChainable with the prompt function and initial context
+  const [result, contextFilledPrompts] = await MinimalChainable.run(
+    initialContext,
+    null, // No specific model object needed for direct HTTP requests
+    prompt, // Pass the prompt function as the callable
+    prompts
+  );
+
+  console.log('Chain Results:', result); // Log the chain results
+  console.log('Context Filled Prompts:', contextFilledPrompts); // Log the context-filled prompts
+}
+
+runChain(); // Execute the chain
