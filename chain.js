@@ -33,17 +33,29 @@ const FusionChainResult = class {
   };
   
   const MinimalChainable = class {
-    static async run(context, model, callable, prompts) {
-      const output = [];
-      const contextFilledPrompts = [];
+    static async run(
+      context, model, callable, prompts
+    ) {
+      const output = []; // Initialize an empty array to store the outputs of each prompt
+      const contextFilledPrompts = []; // Initialize an empty array to store the prompts after context variables are filled
   
+      // Loop through each prompt in the prompts array
       for (let i = 0; i < prompts.length; i++) {
-        let prompt = prompts[i];
+        let prompt = prompts[i]; // Get the current prompt from the array
   
-        for (const [key, value] of Object.entries(context)) {
-          prompt = prompt.replace(`{{${key}}}`, value);
+        // Check if the prompt is a function (accumulator function)
+        if (typeof prompt === 'function') {
+          prompt = await prompt(output[i - 1], context); // Call the accumulator function to get the prompt string
         }
   
+        // Replace context variables in the prompt (e.g., {{topic}}) only if it's a string
+        if (typeof prompt === 'string') { 
+          for (const [key, value] of Object.entries(context)) {
+            prompt = prompt.replace(`{{${key}}}`, value);
+          }
+        }
+  
+        // Replace output references (e.g., {{{output[-1]}}}) in the prompt
         for (let j = i; j > 0; j--) {
           const previousOutput = output[i - j];
   
@@ -57,12 +69,12 @@ const FusionChainResult = class {
           }
         }
   
-        contextFilledPrompts.push(prompt);
+        contextFilledPrompts.push(prompt); // Add the filled prompt to the contextFilledPrompts array
+        
+        const result = await callable(model, prompt); // Call the API with the processed prompt
   
-        let result = await callable(model, prompt);
-  
+        // Attempt to parse the result as JSON
         try {
-          // Attempt to parse as JSON, handling potential markdown wrapping
           const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
           if (jsonMatch) {
             result = JSON.parse(jsonMatch[1]);
@@ -73,13 +85,34 @@ const FusionChainResult = class {
           // Not JSON, keep as is
         }
   
-        output.push(result);
+        output.push(result); // Add the result to the output array
       }
   
-      return [output, contextFilledPrompts];
+      return [output, contextFilledPrompts]; // Return the output and contextFilledPrompts arrays
     }
   
-    // Add to_delim_text_file method if needed
+    static to_delim_text_file(name, content) {
+      let resultString = "";
+      // NOTE: this is stubbed - would need to import fs module
+      // and implement file writing logic
+      // with open(f"{name}.txt", "w") as outfile:
+      for (let i = 0; i < content.length; i++) {
+        let item = content[i];
+        if (typeof item === 'object') {
+          item = JSON.stringify(item);
+        }
+        if (Array.isArray(item)) {
+          item = JSON.stringify(item);
+        }
+        const chainTextDelim = `{'🔗' * (i + 1)} -------- Prompt Chain Result #${i + 1} -------------\n\n`;
+        // outfile.write(chainTextDelim);
+        // outfile.write(item);
+        // outfile.write("\n\n");
+  
+        resultString += chainTextDelim + item + "\n\n";
+      }
+      return resultString;
+    }
   };
   
   module.exports = { MinimalChainable, FusionChain, FusionChainResult };
